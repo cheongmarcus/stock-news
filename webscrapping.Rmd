@@ -1,0 +1,136 @@
+---
+title: "Stock News Analytics - Run monthly (Extract news from the site of that month)"
+Author: "Marcus Cheong"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+Website used to obtain the news articles 
+
+* [Finviz]("https://finviz.com/")
+
+
+```{r,echo=FALSE, collapse=TRUE}
+library(rvest)
+library(stringr)
+library(RCurl)
+library(XML)
+library(lubridate)
+library(dplyr)
+library(zoo)
+library(tm)
+library(tidyr)
+library(tidyverse)
+library(tidytext)
+library(topicmodels)
+library(ggplot2)
+library(spacyr)
+library(sentimentr)
+
+```
+
+## Extract all the news articles **URL**
+
+### Stocks tickers & their URL
+```{r}
+# Consider the stocks that want to obtain the news articles to get its url from finviz
+
+stocks_tickers <- list("aapl","baba","nio") # To update with the ticker to track
+
+stocks_news_url <- c()
+for (i in 1:length(stocks_tickers)){
+  stocks_url <- paste0("https://finviz.com/quote.ashx?t=",stocks_tickers[i])
+  stocks_news_url <- append(stocks_url, stocks_news_url)
+}
+
+```
+
+
+### Individual Stocks and their news URL
+```{r}
+news_url_ <- read_html(stocks_news_url[2])
+news_url <- html_nodes(news_url_, ".tab-link-news") %>% html_attr("href")
+
+time_title_content <- list()
+# this gives the time and title of the articles
+for (i in 1:length(stocks_news_url)){
+  time_title <- read_html(stocks_news_url[i]) %>% html_nodes(xpath = '//*[@id="news-table"]') %>% html_text()
+  time_title_content[i] <- time_title
+}
+
+thismonth <- paste0(format(Sys.Date(),"%b"),"-")
+previousmonth <- paste0(format(as.Date(format(Sys.Date(), "%Y-%m-01")) - 1,"%b"),"-.*")
+format(Sys.Date(),"%b")
+
+extract_titles <- list()
+for (j in 1:length(time_title_content)){
+  remove_previous_month <- gsub(previousmonth,"",time_title_content[j]) #replace the number here with a for loop variable
+  current_month_titles <- strsplit(remove_previous_month, split= thismonth, "-21")
+  extract_titles[j] <- current_month_titles
+}
+
+no_of_articles <- c()
+day_date <- c()
+for (j in 1:length(extract_titles)){
+  for (i in 1:length(extract_titles[[j]])){
+    no.of.articles <- str_count(extract_titles[[j]][i],"AM|PM") # this gives the number of articles in each day --> so to fill the column with the x amount of date for that day
+    no_of_articles <- append(no.of.articles, no_of_articles)
+    day.date <- paste0(thismonth,strsplit(extract_titles[[j]][i], "-21")[[1]][1])
+  # this gives the day of the date #replace the number here with a for loop variable
+    day_date <- append(day.date, day_date)
+}
+}
+articles <- do.call(rbind, Map(data.frame, number_of_articles=no_of_articles, article_date=day_date))
+
+articles$ticker <- rep(NA, dim(articles)[1])
+tickers <- unlist(stocks_tickers)
+
+indexes_1 <- which(articles$number_of_articles==0)
+for (i in 1:length(indexes_1)) {
+  articles[indexes_1[i],3] <- tickers[i]
+}
+articles <-articles %>% fill(ticker, .direction = "up")
+articles$number_of_articles <- ifelse(articles$number_of_articles ==0,NA,articles$number_of_articles)
+articles<- articles[-which(is.na(articles$number_of_articles)), ]
+
+
+# Returns the article title, ticker and date of article
+empty_vector <- c()
+for (i in 1:length(extract_titles)){
+  for (j in 1:length(extract_titles[[i]])){
+    empty <- str_split(extract_titles[[i]][j],"AM|PM")
+    empty_vector <- append(empty_vector,empty)
+  }
+}
+empty_vector <- unlist(empty_vector)
+empty_vector <- as.data.frame(empty_vector)
+colnames(empty_vector) <- "article_title"
+empty_vector$tickers <- rep(NA, dim(empty_vector)[1])
+
+tickers <- rev(unlist(stocks_tickers))
+indexes <- which(empty_vector$article_title=="")
+for (i in 1:length(indexes)) {
+  empty_vector[indexes[i],2] <- tickers[i]
+}
+empty_vector <- empty_vector %>% fill(tickers, .direction = "down")
+
+# remove any whitespaces and string manipulation
+empty_vector$article_title <- str_trim(empty_vector$article_title)
+empty_vector$article_title <- gsub("[0123456789][0123456789]:[0123456789][0123456789]", "", empty_vector$article_title)
+empty_vector$article_title <- str_trim(empty_vector$article_title)
+empty_vector$article_title <- ifelse(empty_vector$article_title == "",NA,empty_vector$article_title)
+empty_vector<- empty_vector[-which(is.na(empty_vector$article_title)), ]
+empty_vector$article_title <- gsub("-[0123456789][0123456789]", "", empty_vector$article_title)
+
+numbers_only <- function(x) !grepl("\\D", x)
+empty_vector$date <- ifelse(numbers_only(empty_vector$article_title),
+                                     paste0(thismonth,empty_vector$article_title),NA)
+empty_vector <- empty_vector %>% fill(date, .direction = "down")
+empty_vector$article_title <- ifelse(numbers_only(empty_vector$article_title),
+                                     NA,empty_vector$article_title)
+empty_vector<- empty_vector[-which(is.na(empty_vector$article_title)), ]
+
+
+
+```
