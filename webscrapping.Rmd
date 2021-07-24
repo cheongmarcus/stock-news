@@ -49,9 +49,6 @@ for (i in 1:length(stocks_tickers)){
 
 ### Individual Stocks and their news URL
 ```{r}
-news_url_ <- read_html(stocks_news_url[2])
-news_url <- html_nodes(news_url_, ".tab-link-news") %>% html_attr("href")
-
 time_title_content <- list()
 # this gives the time and title of the articles
 for (i in 1:length(stocks_news_url)){
@@ -95,6 +92,46 @@ articles$number_of_articles <- ifelse(articles$number_of_articles ==0,NA,article
 articles<- articles[-which(is.na(articles$number_of_articles)), ]
 
 
+# article titles (without the dates, need to think how to include date to this dataframe)
+title_list <- list()
+# this gives the time and title of the articles
+for (i in 1:length(stocks_news_url)){
+  title <- read_html(stocks_news_url[i]) %>% 
+    html_nodes(xpath = '//*[contains(concat( " ", @class, " " ), concat( " ", "tab-link-news", " " ))]') %>% 
+    html_text()
+  title_list <- append(title_list,title)
+}
+title_unlist <- unlist(title_list)
+title_df <- as.data.frame(title_unlist)
+title_df$ticker <- rev(rep(stocks_tickers,each = 100))
+
+# article URLs
+title_url_list <- list()
+for (i in 1:length(stocks_news_url)){
+  title_url <- read_html(stocks_news_url[i]) %>% 
+    html_nodes(".tab-link-news") %>% 
+    html_attr("href")
+  title_url_list <- append(title_url_list,title_url)
+}
+title_url_unlist <- unlist(title_url_list)
+title_url_df <- as.data.frame(title_url_unlist)
+
+# join both article tiles and URL dataframes
+colnames(title_url_df) <- "url"
+colnames(title_df) <- c("title","ticker")
+article_combined <- cbind(title_df,title_url_df)
+
+
+
+
+
+
+
+
+
+
+
+# -----------------------------------------------------
 # Returns the article title, ticker and date of article
 empty_vector <- c()
 for (i in 1:length(extract_titles)){
